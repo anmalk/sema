@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VK Analytics</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <style>
+    :root { --app-bg: #f6f8fb; }
+    body { background: var(--app-bg); }
+
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .text-cut { max-width: 560px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .photo-thumb {
+      width: 56px; height: 56px; object-fit: cover;
+      border-radius: 10px; border: 1px solid rgba(0,0,0,.08);
+      background: #fff;
+    }
+
+    .card { border: 0; border-radius: 16px; }
+    .card-header { background: transparent; border-bottom: 1px solid rgba(0,0,0,.06); }
+
+    .kpi {
+      border-radius: 14px;
+      background: #fff;
+      border: 1px solid rgba(0,0,0,.06);
+    }
+
+    /* fixed-top navbar перекрывает контент => добавляем отступ сверху */
+    .page-pad-top { padding-top: 84px; }
+
+    .table thead th {
+      font-size: .9rem;
+      color: #334155;
+      white-space: nowrap;
+    }
+    .table tbody td { vertical-align: middle; }
+  </style>
+</head>
+
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top shadow-sm">
+  <div class="container">
+    <span class="navbar-brand fw-semibold">VK Analytics</span>
+    <span class="navbar-text text-light small opacity-75">Flask UI</span>
+  </div>
+</nav>
+
+<div class="container page-pad-top pb-5">
+
+  <!-- PROJECT -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header py-3">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+          <div class="h5 mb-0">Проект</div>
+          <div class="text-muted small">Создай проект один раз, затем запускай анализы сколько угодно</div>
+        </div>
+        <div class="text-muted small">
+          Создан Project ID: <span id="createdProjectId" class="mono fw-semibold">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-lg-6">
+          <label class="form-label">Название проекта</label>
+          <input id="projectName" class="form-control form-control-lg" value="Анализ ВолгГТУ">
+        </div>
+
+        <div class="col-lg-3">
+          <label class="form-label">ID проекта</label>
+          <input id="projectId" type="number" class="form-control form-control-lg" value="1" min="1">
+        </div>
+
+        <div class="col-lg-3 d-grid">
+          <button class="btn btn-primary btn-lg" onclick="createProject()">Создать проект</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- START ANALYSIS -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header py-3">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+          <div class="h5 mb-0">Запуск анализа</div>
+          <div class="text-muted small">Статус обновляется каждые 2 секунды до <span class="mono">done</span></div>
+        </div>
+        <div class="small text-muted">
+          Run ID: <span id="runIdBadge" class="mono fw-semibold">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-lg-4">
+          <label class="form-label">Введите логин группы</label>
+          <input id="groupId" type="text" class="form-control form-control-lg"
+                 value="1"
+                 placeholder="Напр.: 0, feivt, -123, club123, https://vk.com/club123">
+          <div class="form-text">
+          </div>
+        </div>
+
+        <div class="col-lg-4">
+          <label class="form-label">Сколько постов собрать</label>
+          <input id="postCount" type="number" class="form-control form-control-lg" value="50" min="1" max="500">
+        </div>
+
+        <div class="col-lg-4 d-grid">
+          <button id="startBtn" class="btn btn-success btn-lg" onclick="startAnalysis()">Запустить анализ</button>
+        </div>
+      </div>
+
+      <div id="status" class="mt-3"></div>
+    </div>
+  </div>
+
+  <!-- REPORT -->
+  <div class="card shadow-sm" id="reportCard" style="display:none;">
+    <div class="card-header py-3">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <div class="h5 mb-0">Отчёт</div>
+          <div class="text-muted small">Метрики + таблицы</div>
+        </div>
+        <span class="text-muted small">Готово</span>
+      </div>
+    </div>
+
+    <div class="card-body">
+
+      <div class="row g-3" id="metricsRow"></div>
+
+      <hr class="my-4">
+
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0">Топ постов по лайкам</h5>
+        <span class="text-muted small">basic.top_posts_by_likes</span>
+      </div>
+
+      <div class="table-responsive mt-3">
+        <table class="table table-hover align-middle bg-white">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>Дата</th>
+              <th>Лайки</th>
+              <th>Комменты</th>
+              <th>Репосты</th>
+              <th>Просмотры</th>
+              <th>Текст</th>
+              <th>Фото</th>
+            </tr>
+          </thead>
+          <tbody id="topLikesTbody"></tbody>
+        </table>
+      </div>
+
+      <hr class="my-4">
+
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0">ML‑скоринг</h5>
+        <span class="text-muted small">predict.items (первые 50)</span>
+      </div>
+
+      <div class="table-responsive mt-3">
+        <table class="table table-hover align-middle bg-white">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>Дата</th>
+              <th>Лайки</th>
+              <th>Комменты</th>
+              <th>Репосты</th>
+              <th>Просмотры</th>
+              <th>Score</th>
+              <th>Top?</th>
+              <th>Текст</th>
+              <th>Фото</th>
+            </tr>
+          </thead>
+          <tbody id="mlTbody"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal для полного текста -->
+<div class="modal fade" id="textModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="textModalTitle">Текст</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <pre id="textModalBody" style="white-space: pre-wrap; margin:0; font-size: 1rem;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+let currentRunId = null;
+let timer = null;
+
+function setStatus(html, type='info') {
+  const el = document.getElementById('status');
+  const cls =
+    type === 'ok' ? 'alert alert-success py-3' :
+    type === 'err' ? 'alert alert-danger py-3' :
+    type === 'warn' ? 'alert alert-warning py-3' :
+    'alert alert-secondary py-3';
+  el.className = cls;
+  el.innerHTML = html;
+}
+
+function esc(s) {
+  return (s ?? '').toString()
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'","&#039;");
+}
+
+function fmt(n) {
+  if (n === null || n === undefined) return '—';
+  if (typeof n === 'number') return n.toLocaleString('ru-RU');
+  return esc(n);
+}
+
+function openTextModal(title, text) {
+  document.getElementById('textModalTitle').textContent = title || 'Текст поста';
+  document.getElementById('textModalBody').textContent = text || '';
+  const m = new bootstrap.Modal(document.getElementById('textModal'));
+  m.show();
+}
+
+async function createProject() {
+  try {
+    const name = document.getElementById('projectName').value.trim() || 'New Project';
+
+    const r = await fetch(API + '/projects', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name})
+    });
+
+    const data = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(data));
+
+    document.getElementById('createdProjectId').textContent = data.id;
+    document.getElementById('projectId').value = data.id;
+
+    setStatus('Проект создан: <span class="mono fw-semibold">' + data.id + '</span>', 'ok');
+  } catch (e) {
+    setStatus('Ошибка создания проекта: <span class="mono">' + esc(e) + '</span>', 'err');
+  }
+}
+
+async function startAnalysis() {
+  try {
+    document.getElementById('reportCard').style.display = 'none';
+
+    const project_id = parseInt(document.getElementById('projectId').value, 10);
+
+    // ВАЖНО: теперь group_id — любая строка (включая "0" и "feivt")
+    const group_id = (document.getElementById('groupId').value ?? '').trim(); // trim убирает пробелы [web:617]
+
+    const count = parseInt(document.getElementById('postCount').value, 10);
+
+    // Проверяем только: project_id и count валидные, group_id НЕ пустой
+    if (!project_id || !count || group_id.length === 0) {
+      setStatus('Заполни project_id, group_id и count (group_id не должен быть пустым)', 'warn');
+      return;
+    }
+
+    setStatus('Запуск анализа...', 'info');
+
+    const r = await fetch(API + '/runs', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({project_id, group_id, count})
+    });
+
+    const run = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(run));
+
+    currentRunId = run.id;
+    document.getElementById('runIdBadge').textContent = currentRunId;
+
+    if (timer) clearInterval(timer);
+    timer = setInterval(checkStatus, 2000);
+
+    await checkStatus();
+  } catch (e) {
+    setStatus('Ошибка запуска: <span class="mono">' + esc(e) + '</span>', 'err');
+  }
+}
+
+async function checkStatus() {
+  if (!currentRunId) return;
+
+  try {
+    const r = await fetch(API + '/runs/' + currentRunId);
+    const st = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(st));
+
+    const extra = st.error_message ? ('<br><span class="text-danger">Ошибка:</span> ' + esc(st.error_message)) : '';
+    setStatus(
+      'Run <span class="mono fw-semibold">' + st.id + '</span>: ' +
+      '<span class="badge text-bg-primary">' + esc(st.status) + '</span>' + extra,
+      'info'
+    );
+
+    if (st.status === 'done') {
+      clearInterval(timer);
+      setStatus('Run <span class="mono fw-semibold">' + st.id + '</span> завершён. Загружается отчёт...', 'ok');
+
+      const repResp = await fetch(API + '/runs/' + currentRunId + '/report');
+      const rep = await repResp.json();
+
+      if (!repResp.ok) {
+        setStatus('Done, но report не выдан: <span class="mono">' + esc(JSON.stringify(rep)) + '</span>', 'warn');
+        return;
+      }
+
+      renderReport(rep);
+      setStatus('Отчёт загружен для run <span class="mono fw-semibold">' + currentRunId + '</span>', 'ok');
+    }
+
+    if (st.status === 'error') {
+      clearInterval(timer);
+      setStatus('Run завершился ошибкой: ' + esc(st.error_message || 'unknown'), 'err');
+    }
+  } catch (e) {
+    setStatus('Ошибка статуса: <span class="mono">' + esc(e) + '</span>', 'err');
+  }
+}
+
+function renderReport(repWrapper) {
+  const report = repWrapper.report || repWrapper;
+  const basic = report.basic;
+  const predict = report.predict;
+
+  renderMetrics(basic);
+  renderTopLikes(basic.top_posts_by_likes || []);
+  renderPredict((predict && predict.items) ? predict.items : []);
+
+  document.getElementById('reportCard').style.display = 'block';
+}
+
+function renderMetrics(basic) {
+  const items = [
+    {title: 'Постов', val: fmt(basic.total_posts)},
+    {title: 'Лайков', val: `${fmt(basic.total_likes)} (ср. ${basic.avg_likes})`},
+    {title: 'Комментов', val: `${fmt(basic.total_comments)} (ср. ${basic.avg_comments})`},
+    {title: 'Репостов', val: `${fmt(basic.total_reposts)} (ср. ${basic.avg_reposts})`},
+    {title: 'Просмотров', val: `${fmt(basic.total_views)} (ср. ${basic.avg_views})`},
+    {title: 'Dataset ID', val: `<span class="mono">${esc(basic.dataset_id)}</span>`},
+  ];
+
+  const row = document.getElementById('metricsRow');
+  row.innerHTML = items.map(x => `
+    <div class="col-md-4">
+      <div class="kpi p-3 h-100 shadow-sm">
+        <div class="text-muted small">${esc(x.title)}</div>
+        <div class="fs-5 fw-semibold">${x.val}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderTopLikes(posts) {
+  const tbody = document.getElementById('topLikesTbody');
+
+  tbody.innerHTML = posts.map(p => {
+    const fullText = (p.text || '');
+    const textShort = esc(fullText.replaceAll('\n',' ').slice(0, 140)) + (fullText.length > 140 ? '…' : '');
+    const photo = (p.url_photos && p.url_photos.length) ? p.url_photos[0] : null;
+
+    const textCell = fullText
+      ? `<a href="javascript:void(0)" onclick="openTextModal('Пост ${esc(p.id)}', ${JSON.stringify(fullText)})" class="text-decoration-none">
+           <span class="text-cut d-inline-block" title="${esc(fullText)}">${textShort}</span>
+         </a>`
+      : '<span class="text-muted">—</span>';
+
+    const photoCell = photo
+      ? `<a href="${esc(photo)}" target="_blank" title="Открыть фото">
+           <img class="photo-thumb" src="${esc(photo)}" alt="photo">
+         </a>`
+      : '<span class="text-muted">—</span>';
+
+    return `
+      <tr>
+        <td class="mono fw-semibold">${p.id}</td>
+        <td>${esc(p.date)}</td>
+        <td>${fmt(p.likes_count)}</td>
+        <td>${fmt(p.comments_count)}</td>
+        <td>${fmt(p.reposts_count)}</td>
+        <td>${fmt(p.reposts_count)}</td>
+        <td>${textCell}</td>
+        <td>${photoCell}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderPredict(items) {
+  const tbody = document.getElementById('mlTbody');
+
+  tbody.innerHTML = items.slice(0, 50).map(it => {
+    const badge = it.predicted_top
+      ? '<span class="badge text-bg-success">TOP</span>'
+      : '<span class="badge text-bg-secondary">—</span>';
+
+    const fullText = (it.text || '');
+    const textShort = esc(fullText.replaceAll('\n',' ').slice(0, 140)) + (fullText.length > 140 ? '…' : '');
+    const photo = (it.url_photos && it.url_photos.length) ? it.url_photos[0] : null;
+
+    const textCell = fullText
+      ? `<a href="javascript:void(0)" onclick="openTextModal('Пост ${esc(it.id)}', ${JSON.stringify(fullText)})" class="text-decoration-none">
+           <span class="text-cut d-inline-block" title="${esc(fullText)}">${textShort}</span>
+         </a>`
+      : '<span class="text-muted">—</span>';
+
+    const photoCell = photo
+      ? `<a href="${esc(photo)}" target="_blank" title="Открыть фото">
+           <img class="photo-thumb" src="${esc(photo)}" alt="photo">
+         </a>`
+      : '<span class="text-muted">—</span>';
+
+    return `
+      <tr>
+        <td class="mono fw-semibold">${it.id}</td>
+        <td>${esc(it.date)}</td>
+        <td>${fmt(it.likes_count)}</td>
+        <td>${fmt(it.comments_count)}</td>
+        <td>${fmt(it.reposts_count)}</td>
+        <td>${fmt(it.views_count)}</td>
+        <td class="mono">${esc(it.score_top)}</td>
+        <td>${badge}</td>
+        <td>${textCell}</td>
+        <td>${photoCell}</td>
+      </tr>
+    `;
+  }).join('');
+}
+</script>
+
+</body>
+</html>

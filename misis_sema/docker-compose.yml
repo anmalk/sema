@@ -1,0 +1,40 @@
+services:
+  core:
+    build: ./core_service
+    env_file: .env
+    environment:
+      - CORE_DB_PATH=/data/core.db
+      - COLLECTOR_URL=http://collector:8000
+      - AI_URL=http://ai:8000
+    volumes:
+      - core_data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - collector
+      - ai
+
+  collector:
+    build: ./collector_service
+    env_file: .env
+    environment:
+      - VK_TOKEN=${VK_TOKEN}
+      - COLLECTOR_DB_PATH=/data/collector.db
+    volumes:
+      - collector_data:/data
+    ports:
+      - "8001:8000"
+
+  ai:
+    build: ./ai_service
+    env_file: .env
+    environment:
+      - COLLECTOR_URL=http://collector:8000
+    ports:
+      - "8002:8000"
+    depends_on:
+      - collector
+
+volumes:
+  core_data:
+  collector_data:

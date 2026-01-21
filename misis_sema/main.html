@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <title>VK Analytics — Полный веб‑клиент</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto; max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .section { margin: 30px 0; padding: 20px; border: 1px solid #eee; border-radius: 8px; }
+    button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    input { padding: 8px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
+    .status { font-weight: bold; padding: 10px; border-radius: 4px; }
+    .done { background: #d4edda; color: #155724; }
+    .running { background: #fff3cd; color: #856404; }
+    .error { background: #f8d7da; color: #721c24; }
+    table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f8f9fa; }
+    .top-post { background: #e7f3ff; }
+  </style>
+</head>
+<body>
+  <h1>🔍 VK Analytics</h1>
+
+  <!-- 1. Создание проекта -->
+  <div class="section">
+    <h3>📁 Проекты</h3>
+    <input id="projectName" placeholder="Название проекта" value="Анализ ВолгГТУ"/>
+    <button onclick="createProject()">➕ Создать</button>
+    <div id="projectsList"></div>
+  </div>
+
+  <!-- 2. Запуск анализа -->
+  <div class="section">
+    <h3>🚀 Запуск анализа</h3>
+    <input id="projectId" placeholder="ID проекта" value="1"/>
+    <input id="groupId" placeholder="ID группы VK" value="1"/>
+    <input id="postCount" type="number" placeholder="Постов" value="50"/>
+    <button id="startBtn" onclick="startRun()">▶️ Запустить</button>
+    <div id="runStatus" class="status" style="display:none;"></div>
+  </div>
+
+  <!-- 3. Результат -->
+  <div class="section" id="resultSection" style="display:none;">
+    <h3>📊 Отчёт</h3>
+    <div id="basicStats"></div>
+    <canvas id="viewsChart" width="400" height="200"></canvas>
+    <h4>🏆 Топ‑10 постов по лайкам</h4>
+    <table id="topPosts">
+      <thead><tr><th>ID</th><th>Дата</th><th>Текст</th><th>Лайки</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <h4>🤖 ML‑скоринг (вероятность топа)</h4>
+    <table id="mlScoring">
+      <thead><tr><th>ID</th><th>Лайки</th><th>Комменты</th><th>Score</th><th>Предсказано топ</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+<script>
+const API_BASE = 'http://localhost:8000';
+
+let currentRunId = null;
+let statusInterval = null;
+
+// 1. Создать проект
+async function createProject() {
+  const name = document.getElementById('projectName').value;
+  try {
+    const resp = await fetch(`${API_BASE}/projects`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name})
+    });
+    const project = await resp.json();
+    document.getElementById('projectId').value = project.id;
+    document.getElementById('projectsList').innerHTML = `<div>✅ Создан проект ID: ${project.id}</div>`;
+  } catch(e) {
+    alert('Ошибка: ' + e);
+  }
+}
+
+// 2. Запустить анализ
+async function startRun() {
+  const projectId = parseInt(document.getElementById('projectId').value);
+  const groupId = parseInt(document.getElementById('groupId').value);
+  const count = parseInt(document.getElementById('postCount').value);
+
+  const btn = document.getElementById('startBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Запуск...';
+
+  try {
+    const resp = await fetch(`${API_BASE}/projects/${projectId}/runs`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({group_id: groupId, count})
+    });
+    const run = await resp.json();
+    currentRunId = run.id;
+
+    document.getElementById('runStatus').innerHTML = `🚀 Run ID: ${run.id} (статус: ${run.status})`;
+    document.getElementById('runStatus').className = 'status running';
+    document.getElementById('runStatus').style.display = 'block';
+
+    pollStatus();
+  } catch(e) {
+    alert('Ошибка запуска: ' + e);
+    btn.disabled = false;
+    btn.textContent = '▶️ Запустить';
+  }
+}
+
+// 3. Опрос статуса
+async function pollStatus() {
+  if (!currentRunId) return;
+
+  try {
+    const resp = await fetch(`${API_BASE}/runs/${currentRunId}`);
+    const status = await resp.json();
+
+    document.getElementById('runStatus').innerHTML = `📊 Run ID: ${status.id} (статус: <b>${status.status}</b>)`;
+
+    if (status.status === 'done') {
+      document.getElementById('runStatus').className = 'status done';
+      clearInterval(statusInterval);
+      showReport();
+    } else if (status.status === 'error') {
+      document.getElementById('runStatus').className = 'status error';
+      document.getElementById('runStatus').innerHTML += `<br>❌ ${status.error_message}`;
+      clearInterval(statusInterval);
+    } else {
+      document.getElementById('runStatus').className = 'status running';
+    }
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+// 4. Показать отчёт
+async function showReport() {
+  try {
+    const resp = await fetch(`${API_BASE}/runs/${currentRunId}/report`);
+    const report = await resp.json();
+    
+    // Basic stats
+    const basic = report.basic;
+    document.getElementById('basicStats').innerHTML = `
+      <h4>📈 Основные показатели (${basic.total_posts} постов):</h4>
+      <p>🔥 <b>Лайков:</b> ${basic.total_likes.toLocaleString()} (ср. ${basic.avg_likes})</p>
+      <p>💬 <b>Комментов:</b> ${basic.total_comments.toLocaleString()} (ср. ${basic.avg_comments})</p>
+      <p>🔄 <b>Репостов:</b> ${basic.total_reposts.toLocaleString()} (ср. ${basic.avg_reposts})</p>
+      <p>👁️ <b>Просмотров:</b> ${basic.total_views.toLocaleString()} (ср. ${basic.avg_views.toLocaleString()})</p>
+    `;
+
+    // Топ посты
+    const tbody = document.querySelector('#topPosts tbody');
+    tbody.innerHTML = '';
+    basic.top_posts_by_likes.slice(0,10).forEach((post, i) => {
+      const row = tbody.insertRow();
+      row.insertCell(0).textContent = post.id;
+      row.insertCell(1).textContent = post.date;
+      row.insertCell(2).innerHTML = `<a href="https://vk.com/wall${post.owner_id}_${post.id}" target="_blank">${post.text.substring(0,80)}...</a>`;
+      row.insertCell(3).textContent = post.likes_count;
+    });
+
+    // ML scoring (ТОП-10)
+    const mlTbody = document.querySelector('#mlScoring tbody');
+    mlTbody.innerHTML = '';
+    report.predict.items.slice(0,10).forEach(item => {
+      const row = mlTbody.insertRow();
+      row.insertCell(0).textContent = item.id;
+      row.insertCell(1).textContent = item.likes_count;
+      row.insertCell(2).textContent = item.comments_count;
+      row.insertCell(3).textContent = item.score_top;
+      row.insertCell(4).textContent = item.predicted_top ? '⭐ ТОП' : '—';
+    });
+
+    document.getElementById('resultSection').style.display = 'block';
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('startBtn').textContent = '🔄 Новый анализ';
+
+  } catch(e) {
+    document.getElementById('runStatus').innerHTML += `<br>❌ Ошибка отчёта: ${e}`;
+  }
+}
+
+
+// Автоопрос каждые 3 сек
+function startPolling() {
+  statusInterval
