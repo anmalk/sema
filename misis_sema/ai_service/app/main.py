@@ -119,34 +119,3 @@ def analytics_predict(body: dict):
         "label_rule": f"top if likes_count >= median({threshold})",
         "items": out.sort_values("score_top", ascending=False).to_dict(orient="records"),
     }
-
-@app.post("/analytics/cluster")
-def analytics_cluster(body: dict):
-    dataset_id = body.get("dataset_id")
-    k = int(body.get("k", 3))
-    if not dataset_id:
-        raise HTTPException(400, "dataset_id required")
-    if k < 2 or k > 8:
-        raise HTTPException(400, "k must be in [2..8]")
-
-    posts = fetch_posts(dataset_id)
-    df = to_df(posts)
-    if df.empty or len(df) < k:
-        raise HTTPException(400, "not enough data for clustering")
-
-    X = df[["likes_count", "comments_count", "reposts_count", "views_count"]].values
-
-    pipe = Pipeline([
-        ("scaler", StandardScaler()),
-        ("kmeans", KMeans(n_clusters=k, n_init="auto", random_state=42)),
-    ])
-    labels = pipe.fit_predict(X)
-
-    out = df[["id", "date", "likes_count", "comments_count", "reposts_count", "views_count"]].copy()
-    out["cluster_id"] = labels.astype(int)
-
-    return {
-        "dataset_id": dataset_id,
-        "k": k,
-        "items": out.to_dict(orient="records"),
-    }
