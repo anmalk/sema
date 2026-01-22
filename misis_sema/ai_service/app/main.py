@@ -22,14 +22,12 @@ def to_df(posts: list[dict]) -> pd.DataFrame:
     if df.empty:
         return df
 
-    # Числовые поля
     for c in ["likes_count", "comments_count", "reposts_count", "views_count"]:
         if c not in df.columns:
             df[c] = 0
 
     df["views_count"] = pd.to_numeric(df["views_count"], errors="coerce").fillna(0).astype(int)
 
-    # Текст + фото (чтобы predict мог их вернуть)
     if "text" not in df.columns:
         df["text"] = ""
     else:
