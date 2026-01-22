@@ -106,7 +106,6 @@ class _HomePageState extends State<HomePage> {
   final _projectName = TextEditingController(text: 'Анализ ВолгГТУ');
   final _projectId = TextEditingController(text: '1');
 
-  // теперь groupId — строка
   final _groupId = TextEditingController(text: '1');
 
   final _count = TextEditingController(text: '50');
@@ -266,7 +265,6 @@ class _HomePageState extends State<HomePage> {
     final groupId = _groupId.text.trim(); // <-- строка
     final count = int.tryParse(_count.text.trim());
 
-    // Проверяем только "не пусто" для groupId
     if (projectId == null || groupId.isEmpty || count == null) {
       setState(() => _statusText = 'Заполни projectId/groupId/count');
       return;
